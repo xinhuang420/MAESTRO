@@ -85,13 +85,13 @@ Run_cisTopic <- function(peakCountFile, outPrefix, minPeak = 500)
   # Topic selection and visualization
   pdf(paste0(outPrefix,"_topics_select.pdf"),width=10,height=5)
   par(mfrow=c(1,2))
-  cisTopicObject <- selectModel(cisTopicObject, select = 10)
+  cisTopicObject <- selectModel(cisTopicObject, select = 30) # I changed this from 10 to 30. Since it won't increase computational time to 'choose' a different pre-computed model and the higher the number, better the results  --TL
   logLikelihoodByIter(cisTopicObject, select=c(5,10,20,30))
   dev.off()
   pdf(paste0(outPrefix,"_topics_heatmap.pdf"),width=12,height=5)
   cellTopicHeatmap(cisTopicObject, method='Probability')
   dev.off()  
-  cisTopicObject <- runUmap(cisTopicObject, target='cell', perplexity=200, check_duplicates=FALSE)
+  cisTopicObject <- runUmap(cisTopicObject, target='cell', perplexity=200, check_duplicates=FALSE) #no perplexity parameter in umap package, it's called n_neighbors, by default 20
   pdf(paste0(outPrefix,"_topics_umap.pdf"),width=10,height=5)
   par(mfrow=c(2,5))
   plotFeatures(cisTopicObject, method='Umap', target='cell', topic_contr='Probability', colorBy=NULL, cex.legend = 0.8, factor.max=.75, dim=2, legend=TRUE)
@@ -99,12 +99,24 @@ Run_cisTopic <- function(peakCountFile, outPrefix, minPeak = 500)
   saveRDS(cisTopicObject, paste0(outPrefix,".rds")) 
   
   # Umap visualization
-  cellassign <- modelMatSelection(cisTopicObject, 'cell', 'Probability')
-  cellassign <- t(scale(t(cellassign)))
-  cellassignmax <- apply(cellassign, 2, which.max)
+
+  #cellassign <- modelMatSelection(cisTopicObject, 'cell', 'Probability')
+  #cellassign <- t(scale(t(cellassign)))
+  #cellassignmax <- apply(cellassign, 2, which.max)
 # metadata <- data.frame(celltype=sapply(strsplit(names(cellassignmax),"\\."),function(x) x[2]), cluster=as.character(cellassignmax), row.names=names(cellassignmax))
-  metadata <- data.frame(cluster=as.character(cellassignmax), row.names=names(cellassignmax))
-  cisTopicObject <- addCellMetadata(cisTopicObject, cell.data = metadata)
+  #metadata <- data.frame(cluster=as.character(cellassignmax), row.names=names(cellassignmax))
+
+  # TL: this is a way to use DBscan, a density clustering method to perform clustering on Umap space (2D space by default)
+  library(fpc)                          #use dbscan in fpc package
+  dr <- cisTopicObject@dr$cell$Umap     #dimension reduction results can be retrieved from @dr
+  dbclust <- dbscan(dr, MinPts=50, showplot=F, method="raw", eps=1) #MinPts 50 and eps 1 are arbitrary
+
+  DBscanUmap <- as.factor(dbclust$cluster)
+  DBscanUmap <- as.data.frame(DBscanUmap)
+  rownames(DBscanUmap) <- cisTopicObject@cell.names
+  colnames(DBscanUmap) <- 'cluster'
+  cisTopicObject <- addCellMetadata(cisTopicObject, DBscanUmap)
+
   pdf(paste0(outPrefix,"_cluster_umap.pdf"),width=6,height=5)
   plotFeatures(cisTopicObject, method='Umap', target='cell', topic_contr=NULL, colorBy='cluster', cex.legend = 0.8, factor.max=.75, dim=2, legend=TRUE, col.low='darkgreen', col.mid='yellow', col.high='brown1', intervals=20)
   dev.off()
